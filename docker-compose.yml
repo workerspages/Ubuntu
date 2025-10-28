@@ -1,0 +1,14 @@
+# ... (前半部分不变)
+    volumes:
+      - uptime-kuma-data:/app/data
+    # 更新 environment 部分
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+      # 新增 Telegram 环境变量
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # 您也可以在这里添加邮件相关的环境变量
+      # - SMTP_SERVER=${SMTP_SERVER}
+      # - SMTP_PORT=${SMTP_PORT}
+      # ...
+# ... (后半部分不变)
