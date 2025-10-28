@@ -1,4 +1,16 @@
-# ... (前半部分不变)
+version: '3.8'
+
+services:
+  uptime-kuma-suite:
+    # 从当前目录的 Dockerfile 构建镜像
+    build: .
+    # 为构建好的镜像命名
+    image: my-ultimate-uptime-kuma
+    # 容器名称
+    container_name: uptime-kuma-suite
+    # 集成重启策略
+    restart: unless-stopped
+    # 持久化 Uptime Kuma 的数据
     volumes:
       - uptime-kuma-data:/app/data
     # 更新 environment 部分
@@ -11,4 +23,8 @@
       # - SMTP_SERVER=${SMTP_SERVER}
       # - SMTP_PORT=${SMTP_PORT}
       # ...
-# ... (后半部分不变)
+    cap_add:
+      - SYS_ADMIN
+
+volumes:
+  uptime-kuma-data:
