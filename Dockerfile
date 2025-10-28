@@ -5,43 +5,48 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# ### 关键修复 1: 更换 APT 软件源为 Amazon AWS 在美国的镜像 ###
-# 这个源在美国通常非常稳定和快速
+# 更换 APT 软件源为 Amazon AWS 在美国的镜像
 RUN sed -i 's@http://archive.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list && \
     sed -i 's@http://security.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list
 
 # 设置时区
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 步骤 2: 安装系统依赖 (不包含 Chrome 和 Node.js 的添加源操作)
-# 注意：这里我们移除了强制IPv4的选项，因为更换源后通常不再需要
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    cron git sudo vim lsof \
-    wget unzip curl gnupg msmtp \
-    python3 python3-pip ca-certificates \
-    fonts-wqy-zenhei fonts-wqy-microhei \
-    libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1
+# 步骤 2: 安装系统依赖 (!!! 关键修复 1: 内部增加重试逻辑 !!!)
+# 这个脚本块会尝试最多3次，每次间隔15秒，以抵抗网络抖动
+RUN for i in 1 2 3; do \
+      apt-get update && \
+      apt-get install -y --no-install-recommends \
+        cron git sudo vim lsof \
+        wget unzip curl gnupg msmtp \
+        python3 python3-pip ca-certificates \
+        fonts-wqy-zenhei fonts-wqy-microhei \
+        libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1 && \
+      break; \
+    done || exit 1
 
 # 步骤 3: 安装 Node.js
-# 这一步有网络操作，但独立出来
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
     apt-get install -y nodejs
 
 # 步骤 4: 下载并安装 Uptime Kuma
 RUN git clone https://github.com/louislam/uptime-kuma.git /app
 WORKDIR /app
-RUN npm run setup
+# npm install 也可能因网络问题失败，为它也加上重试
+RUN for i in 1 2 3; do npm run setup && break || sleep 15; done || exit 1
 
-# 步骤 5: 安装 Google Chrome 浏览器 (优化结构)
-# 先完成添加源和密钥的网络操作
+# 步骤 5: 安装 Google Chrome 浏览器
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
-# 然后再执行 apt 安装
-RUN apt-get update && \
-    apt-get install -y google-chrome-stable --no-install-recommends
+# 为 Chrome 的安装也加上重试
+RUN for i in 1 2 3; do \
+      apt-get update && \
+      apt-get install -y google-chrome-stable --no-install-recommends && \
+      break; \
+    done || exit 1
 
-# (后续所有步骤保持不变)
+# (后续步骤保持不变)
+
 # 步骤 6: 安装 ChromeDriver
 RUN CHROME_VERSION=$(google-chrome --version | cut -d " " -f3 | cut -d "." -f1-3) && \
     DRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json" | python3 -c "import sys, json; print(next(v['version'] for v in reversed(json.load(sys.stdin)['versions']) if v['version'].startswith('$CHROME_VERSION')))") && \
