@@ -17,6 +17,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        id: buildx # 给这个步骤一个ID，方便后面引用
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
@@ -25,20 +26,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push with retries
-        uses: nick-invision/retry@v2
+      # ### 关键修复 2: 启用 GitHub Actions Cache ###
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
-          # ### 关键修复：添加超时时间 ###
-          # 设置命令执行的超时时间为 30 分钟
-          timeout_minutes: 30
-          # 最多重试 3 次
-          max_attempts: 3
-          # 每次重试间隔 20 秒
-          retry_wait_seconds: 20
-          # 要执行的命令
-          command: >
-            docker buildx build . \
-              --file ./Dockerfile \
-              --tag yesyunxin/ubuntu:latest \
-              --tag yesyunxin/ubuntu:${{ github.sha }} \
-              --push
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            yesyunxin/ubuntu:latest
+            yesyunxin/ubuntu:${{ github.sha }}
+          # 启用缓存
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
