@@ -1,0 +1,8 @@
+# crontab.txt
+
+# 语法: 分 时 日 月 周 命令
+# 示例：每5分钟，以 'node' 用户的身份，运行 Python 脚本
+# 并将所有输出(标准输出和错误输出)追加到 /app/data/cron.log 文件中
+*/5 * * * * node /usr/bin/python3 /app/my_monitoring_script.py >> /app/data/cron.log 2>&1
+
+# 确保文件末尾有一个空行，这是 cron 的一个良好实践
