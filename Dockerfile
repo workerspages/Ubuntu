@@ -5,7 +5,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
-# 更换 APT 软件源为 Amazon AWS 在美国的镜像，以提高稳定性
+# 更换 APT 软件源为 Amazon AWS 在美国的镜像
 RUN sed -i 's@http://archive.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list && \
     sed -i 's@http://security.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list
 
@@ -58,9 +58,11 @@ RUN curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/r
     rm cloudflared.deb
 
 # 步骤 8: 使用 pip 安装 Python 库 (!!! 关键修复 !!!)
-# 首先，升级 pip 到最新版本，这样它就能识别 --break-system-packages 参数
-RUN python3 -m pip install --upgrade pip --break-system-packages
-# 然后，再用升级后的 pip 来安装所有依赖包
+# 首先，删除 PEP 668 的限制文件，让旧版 pip 可以自由升级
+RUN find /usr/lib -name EXTERNALLY-MANAGED -delete
+# 然后，直接升级 pip，无需任何特殊参数
+RUN python3 -m pip install --upgrade pip
+# 最后，使用升级后的新版 pip，配合 --break-system-packages 参数来安装所有库
 RUN pip3 install \
     --no-cache-dir \
     --break-system-packages \
