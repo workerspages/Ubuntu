@@ -1,5 +1,6 @@
 # 步骤 1: 使用官方 Uptime Kuma 镜像作为基础
 FROM louislam/uptime-kuma:2
+FROM moelin/1panel:global-latest
 
 # 步骤 2: 切换到 root 用户以安装所有依赖项
 USER root
