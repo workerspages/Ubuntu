@@ -18,7 +18,7 @@ SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')
 MAIL_FROM = os.getenv('MAIL_FROM')
 MAIL_TO = os.getenv('MAIL_TO')
 
-URL_TO_MONITOR = 'https://www.example.com'
+URL_TO_MONITOR = 'https://my.wavehost.org/products/web-hosting'
 SCREENSHOT_PATH = '/tmp/screenshot.png'
 LAST_SCREENSHOT_PATH = '/tmp/last_screenshot.png' # 用于对比
 
