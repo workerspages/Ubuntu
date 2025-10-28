@@ -1,53 +1,48 @@
 # 步骤 1: 使用 Ubuntu 22.04 作为基础镜像
 FROM ubuntu:22.04
 
-# 设置环境变量，防止安装过程中出现交互式提示
+# 设置环境变量
 ENV DEBIAN_FRONTEND=noninteractive
-
-# 设置时区为 Asia/Shanghai
 ENV TZ=Asia/Shanghai
+
+# ### 关键修复 1: 更换 APT 软件源为 Amazon AWS 在美国的镜像 ###
+# 这个源在美国通常非常稳定和快速
+RUN sed -i 's@http://archive.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list && \
+    sed -i 's@http://security.ubuntu.com@http://us-east-1.ec2.archive.ubuntu.com@g' /etc/apt/sources.list
+
+# 设置时区
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 步骤 2: 安装所有系统依赖和 Git
-# !!! 关键修复：在所有 apt-get 命令前添加 -o Acquire::ForceIPv4=true !!!
-RUN apt-get -o Acquire::ForceIPv4=true update && \
-    apt-get install -y -o Acquire::ForceIPv4=true --no-install-recommends \
-    # 新增 cron 定时任务服务
-    cron \
-    # 新增 Git，用于克隆仓库
-    git \
-    # 调试工具
-    sudo vim lsof \
-    # 系统工具
+# 步骤 2: 安装系统依赖 (不包含 Chrome 和 Node.js 的添加源操作)
+# 注意：这里我们移除了强制IPv4的选项，因为更换源后通常不再需要
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    cron git sudo vim lsof \
     wget unzip curl gnupg msmtp \
-    # Python 环境
-    python3 python3-pip \
-    # Node.js 安装依赖
-    ca-certificates \
-    # 中文字体和 Chrome 依赖
+    python3 python3-pip ca-certificates \
     fonts-wqy-zenhei fonts-wqy-microhei \
     libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1
 
 # 步骤 3: 安装 Node.js
+# 这一步有网络操作，但独立出来
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && \
-    apt-get install -y -o Acquire::ForceIPv4=true nodejs
-
-# (其余部分保持不变，但为了保险，在需要联网的 apt-get 前都加上)
+    apt-get install -y nodejs
 
 # 步骤 4: 下载并安装 Uptime Kuma
 RUN git clone https://github.com/louislam/uptime-kuma.git /app
 WORKDIR /app
 RUN npm run setup
 
-# 步骤 5: 安装 Google Chrome 浏览器
+# 步骤 5: 安装 Google Chrome 浏览器 (优化结构)
+# 先完成添加源和密钥的网络操作
 RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome-keyring.gpg && \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get -o Acquire::ForceIPv4=true update && \
-    apt-get install -y -o Acquire::ForceIPv4=true google-chrome-stable --no-install-recommends
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+# 然后再执行 apt 安装
+RUN apt-get update && \
+    apt-get install -y google-chrome-stable --no-install-recommends
 
-# (后续步骤无需修改，因为它们不使用 apt-get)
-
-# 步骤 6: 安装与 Chrome 版本匹配的 ChromeDriver
+# (后续所有步骤保持不变)
+# 步骤 6: 安装 ChromeDriver
 RUN CHROME_VERSION=$(google-chrome --version | cut -d " " -f3 | cut -d "." -f1-3) && \
     DRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json" | python3 -c "import sys, json; print(next(v['version'] for v in reversed(json.load(sys.stdin)['versions']) if v['version'].startswith('$CHROME_VERSION')))") && \
     wget -q "https://storage.googleapis.com/chrome-for-testing-public/${DRIVER_VERSION}/linux64/chromedriver-linux64.zip" -O chromedriver.zip && \
