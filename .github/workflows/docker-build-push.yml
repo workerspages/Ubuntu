@@ -25,11 +25,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # ### 关键修复 2: 增加构建重试机制 ###
       - name: Build and push with retries
-        # 使用一个社区提供的重试 Action wrapper
         uses: nick-invision/retry@v2
         with:
+          # ### 关键修复：添加超时时间 ###
+          # 设置命令执行的超时时间为 30 分钟
+          timeout_minutes: 30
           # 最多重试 3 次
           max_attempts: 3
           # 每次重试间隔 20 秒
