@@ -1,55 +1,12 @@
-以将 `cloudflared` 程序集成到 Uptime Kuma 的 Docker 镜像中。这样，您就可以通过 Cloudflare Tunnel 将 Uptime Kuma 服务安全地暴露到公网，而无需在主机上开放端口或进行复杂的防火墙配置。
+好的，您可以将 `TUNNEL_TOKEN`直接集成到 `start.sh` 脚本文件中。这样，在构建镜像时，这个令牌就会被永久地写入镜像里。
 
-我们将基于 Uptime Kuma 的官方镜像进行修改，因为这比从一个纯净的 Ubuntu 系统开始构建更高效、更可靠。
+但是，在您这样做之前，请务必阅读下面的 **重要安全警告**。
 
-### **实现步骤**
+---
 
-我们将创建一个新的 `Dockerfile` 和一个启动脚本 `start.sh`。`start.sh` 脚本将负责同时启动 Uptime Kuma 和 `cloudflared` 两个进程。
+### **修改后的 `start.sh` 文件**
 
-1.  **创建 `Dockerfile`**
-
-    创建一个名为 `Dockerfile` 的文件，并将以下内容复制进去。这个文件定义了如何构建我们的自定义镜像。
-
-```dockerfile
-# 步骤 1: 使用官方 Uptime Kuma 镜像作为基础
-# 这确保了 Node.js 环境和 Uptime Kuma 本身已经正确安装和配置。
-FROM louislam/uptime-kuma:2
-
-# 步骤 2: 切换到 root 用户
-# 为了安装新的软件包，需要 root 权限。
-USER root
-
-# 步骤 3: 更新软件包列表并安装 cloudflared
-# 我们使用 curl 下载最新的 amd64 架构的 .deb 安装包，然后用 dpkg 安装。
-# 注意：如果您的服务器是 ARM 架构 (如树莓派), 请将下面的 URL 中的 "amd64" 更改为 "arm64"。
-RUN apt-get update && \
-    apt-get install -y curl && \
-    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
-    dpkg -i cloudflared.deb && \
-    # 清理工作：删除下载的安装包并清理 apt 缓存，以减小镜像体积。
-    rm cloudflared.deb && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# 步骤 4: 复制并授权启动脚本
-# 将我们本地的 start.sh 脚本复制到镜像的根目录下，并赋予它执行权限。
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
-
-# 步骤 5: 切换回非 root 用户
-# 为了安全起见，完成安装后，我们将用户切换回 Uptime Kuma 默认的 'node' 用户。
-USER node
-
-# 步骤 6: 设置容器的默认启动命令
-# 指定容器启动时执行我们的自定义脚本。
-CMD ["/start.sh"]
-```
-
-**注意**：上述 `curl` 命令下载的是 `amd64` (x86_64) 架构的版本。如果您在 ARM 架构（如树莓派）的机器上运行，需要将 URL 中的 `amd64` 替换为 `arm64`。
-
-2.  **创建 `start.sh` 脚本**
-
-    在与 `Dockerfile` 相同的目录下，创建一个名为 `start.sh` 的文件。这个脚本将启动两个服务。
+您只需要修改 `start.sh` 文件。`Dockerfile` 的内容保持不变。
 
 ```bash
 #!/bin/sh
@@ -57,74 +14,96 @@ CMD ["/start.sh"]
 # 设置 shell 在遇到错误时立即退出
 set -e
 
+# ==============================================================================
+# !!! 安全警告: 将 Token 硬编码在此处会带来严重的安全风险 !!!
+# !!! 任何能够访问此 Docker 镜像的人都可以轻易地提取出这个 Token !!!
+# !!! 强烈建议使用环境变量来传递 Token !!!
+#
+# 在下面的引号中粘贴你的真实隧道令牌
+TUNNEL_TOKEN="<在这里粘贴你的隧道令牌>"
+# ==============================================================================
+
+
 # 1. 在后台启动 Uptime Kuma 服务
-# 我们使用 'node server/server.js' 命令，这是官方镜像启动服务的方式。
-# '&' 符号让这个命令在后台运行，这样脚本可以继续执行下面的命令。
 echo "Starting Uptime Kuma..."
 node server/server.js &
 
-# 2. 检查 TUNNEL_TOKEN 环境变量
-# cloudflared 需要一个 token 才能认证并连接到 Cloudflare Tunnel。
-# 这个 token 必须通过环境变量传入。
-if [ -z "$TUNNEL_TOKEN" ]; then
-  # 如果没有提供 token，打印错误信息并退出脚本，防止 cloudflared 启动失败。
-  echo "Error: TUNNEL_TOKEN environment variable is not set." >&2
-  # 等待后台的Uptime Kuma进程（虽然在这种情况下它可能是唯一的进程）
+# 2. 检查 Token 是否已被替换
+if [ "$TUNNEL_TOKEN" = "<在这里粘贴你的隧道令牌>" ] || [ -z "$TUNNEL_TOKEN" ]; then
+  # 如果用户没有替换占位符，打印错误信息并退出。
+  echo "错误：请务必编辑 start.sh 文件，将占位符 '<在这里粘贴你的隧道令牌>' 替换为你的真实隧道令牌。" >&2
+  # 等待后台进程结束
   wait
   exit 1
 fi
 
 # 3. 等待 Uptime Kuma 启动
-# 给予 Uptime Kuma 几秒钟的时间来完成初始化并开始监听端口。
-# 这样可以避免 cloudflared 尝试连接一个尚未就绪的服务。
 echo "Waiting for Uptime Kuma to be ready..."
 sleep 5
 
 # 4. 在前台启动 cloudflared Tunnel 服务
-# 这个命令会连接到 Cloudflare 并将流量转发到 Uptime Kuma 的 3001 端口。
-# '--no-autoupdate' 是在容器中运行的推荐参数。
-# '--url' 参数告诉 cloudflared 将外部流量转发到哪个内部地址。
-# 这个命令会持续运行，作为容器的主进程，从而保持容器的存活状态。
+# 脚本将使用上面定义的 TUNNEL_TOKEN 变量
 echo "Starting Cloudflared Tunnel..."
 cloudflared tunnel --no-autoupdate run --token $TUNNEL_TOKEN
-
 ```
 
+### **`Dockerfile` (保持不变)**
 
-3.  **构建 Docker 镜像**
+`Dockerfile` 不需要任何改动，它会按原样复制上面修改过的 `start.sh` 文件。
 
-    确保 `Dockerfile` 和 `start.sh` 文件在同一个目录下。打开终端，执行以下命令来构建您的自定义镜像：
+```dockerfile
+# 使用官方 Uptime Kuma 镜像作为基础
+FROM louislam/uptime-kuma:2
 
-    ```bash
-    docker build -t uptime-kuma-cloudflared .
-    ```
-    *   `-t uptime-kuma-cloudflared`：为您的新镜像命名。
+# 切换到 root 用户
+USER root
 
-4.  **运行集成了 `cloudflared` 的容器**
+# 安装 cloudflared
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
+    dpkg -i cloudflared.deb && \
+    rm cloudflared.deb && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-    在运行容器之前，您需要先从 Cloudflare Zero Trust 仪表板获取您的 Tunnel Token。
+# 复制并授权启动脚本
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
 
-    获取到 Token 后，使用以下命令运行容器：
+# 切换回非 root 用户
+USER node
 
-    ```bash
-    docker run -d \
-      --restart=unless-stopped \
-      -e TUNNEL_TOKEN="YOUR_TUNNEL_TOKEN_HERE" \
-      -v uptime-kuma-data:/app/data \
-      --name uptime-kuma-tunnel \
-      uptime-kuma-cloudflared
-    ```
+# 设置容器的默认启动命令
+CMD ["/start.sh"]
+```
 
-    请替换以下参数：
-    *   `YOUR_TUNNEL_TOKEN_HERE`：替换为您从 Cloudflare 获取的隧道令牌。
-    *   `uptime-kuma-data`：这是用于持久化存储 Uptime Kuma 数据的 Docker 数据卷名称。
-    *   `uptime-kuma-tunnel`：这是容器的名称。
+---
 
-### **工作原理**
+### **重要安全警告：为什么不应该这样做**
 
-*   当容器启动时，它会执行 `start.sh` 脚本。
-*   脚本首先在后台启动 Uptime Kuma 的 Node.js 服务。
-*   然后，脚本会启动 `cloudflared` 进程，并使用您通过环境变量传入的 `TUNNEL_TOKEN` 来连接到 Cloudflare 的边缘网络。
-*   `cloudflared` 会自动将分配给您的 Tunnel 的公共域名流量，安全地转发到容器内部的 `localhost:3001`，也就是 Uptime Kuma 正在监听的地址。
+尽管技术上可行，但将密钥（如 `TUNNEL_TOKEN`）直接硬编码到 Docker 镜像中是一种**非常危险**的做法，原因如下：
 
-通过这种方式，您成功地将 Uptime Kuma 和 `cloudflared` 打包到了一个镜像中，实现了简洁、安全的部署。
+1.  **严重的安全风险**：任何能够访问这个 Docker 镜像文件的人（无论是通过 `docker save` 导出，还是从 Docker 仓库拉取），都可以通过 `docker history` 或其他工具轻松地查看到镜像层中的 `start.sh` 文件，从而**窃取您的 `TUNNEL_TOKEN`**。这会使您的 Cloudflare Tunnel 和其背后的服务完全暴露。
+
+2.  **缺乏灵活性**：如果您的 Token 因为任何原因需要更换（例如，重建了隧道），您将必须**重新编辑 `start.sh` 文件、重新构建整个 Docker 镜像、然后重新部署容器**。这个过程非常繁琐。
+
+3.  **违反了最佳实践**：容器化应用的最佳实践（如 [The Twelve-Factor App](https://12factor.net/config)）明确指出，配置（尤其是密钥）应该与代码分离，并通过环境变量注入。
+
+### **推荐的、更安全的方法（回顾）**
+
+我们之前的做法是正确且安全的。通过环境变量传递 `TUNNEL_TOKEN`，您可以：
+*   保持镜像的通用性和安全性，镜像本身不包含任何敏感信息。
+*   在运行时轻松更换 Token，只需修改 `docker run` 命令中的环境变量即可，无需重新构建镜像。
+
+**安全的运行命令示例：**
+```bash
+docker run -d \
+  --restart=unless-stopped \
+  -e TUNNEL_TOKEN="你的真实隧道令牌" \
+  -v uptime-kuma-data:/app/data \
+  --name uptime-kuma-tunnel \
+  uptime-kuma-cloudflared
+```
+
+**总结：请坚持使用环境变量的方式来传递 `TUNNEL_TOKEN`，以确保您的服务安全和部署的灵活性。**
