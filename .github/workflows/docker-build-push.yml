@@ -52,5 +52,5 @@ jobs:
           # 为镜像打标签
           # !!! 请将下面的 "your-dockerhub-username/your-repo-name" 修改为您自己的 !!!
           tags: |
-            your-dockerhub-username/your-repo-name:latest
-            your-dockerhub-username/your-repo-name:${{ github.sha }}
+            yesyunxin/ubuntu:latest
+            yesyunxin/ubuntu:${{ github.sha }}
